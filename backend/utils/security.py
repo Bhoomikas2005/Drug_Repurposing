@@ -1,13 +1,15 @@
 from datetime import datetime, timedelta
+import os
+import secrets
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 
 # Configuration
-SECRET_KEY = "your-secret-key-change-this-in-production-use-environment-variable"
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 # Password hashing context - using argon2 instead of bcrypt for better compatibility
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")

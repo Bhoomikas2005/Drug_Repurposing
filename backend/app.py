@@ -25,6 +25,12 @@ import os
 from pathlib import Path
 import difflib
 
+APP_BASE_URL = (
+    os.getenv("APP_BASE_URL")
+    or os.getenv("RENDER_EXTERNAL_URL")
+    or "http://127.0.0.1:8000"
+).rstrip("/")
+
 app = FastAPI(title="AI-Based Multi-Agent System for Drug Repurposing")
 
 # Add CORS middleware
@@ -66,6 +72,10 @@ def index():
     """Serve the main application page. Frontend will handle auth checks and redirects."""
     with open("frontend/index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
 
 @app.get("/login.html", response_class=HTMLResponse)
 def login_page():
@@ -223,7 +233,7 @@ async def register(user_data: UserCreate) -> dict:
 
         # Generate verification token and link
         verification_token = generate_verification_token(new_user["email"])
-        verification_link = f"http://127.0.0.1:8000/api/verify-email?token={verification_token}"
+        verification_link = f"{APP_BASE_URL}/api/verify-email?token={verification_token}"
 
         # If email sending is disabled (dev mode), auto-verify and return link/token in response
         if not ENABLE_EMAIL:
@@ -285,7 +295,7 @@ async def verify_email(token: str) -> dict:
         return {
             "message": "Email verified successfully!",
             "email": email,
-            "redirect": "http://127.0.0.1:8000/api/docs"  # Redirect to API docs or login page
+            "redirect": f"{APP_BASE_URL}/login.html"
         }
     else:
         raise HTTPException(
@@ -381,31 +391,10 @@ def process(disease: str = Query(..., description="Disease or symptoms to search
         predicted_disease, confidence = prediction_model_agent.predict_disease(q)
         is_prediction = True
     
-    # 2. Retrieve papers for the disease
-    papers = retriever.search_papers(predicted_disease, use_real=real_data)
-    
-    # 3. Extract entities from papers
-    extraction_agent = ExtractionAgent()
-    entities_per_paper = extraction_agent.extract_entities_from_papers(papers)
-    
-    # Aggregate entities across all papers for summary statistics
-    all_drugs = set()
-    all_genes = set()
-    all_diseases = set()
-    all_symptoms = set()
-    all_evidence = []
-    
-    for pid, entities in entities_per_paper.items():
-        all_drugs.update(entities.get("drugs", []))
-        all_genes.update(entities.get("genes", []))
-        all_diseases.update(entities.get("diseases", []))
-        all_symptoms.update(entities.get("symptoms", []))
-        all_evidence.extend(entities.get("evidence", []))
-    
-    # 4. Get drugs from Knowledge Graph (drug -> gene -> disease)
+    # 2. Get drugs from Knowledge Graph (drug -> gene -> disease)
     predictions = graph_agent.suggest_drugs(predicted_disease)
     
-    # 5. Add safety/validation to predictions
+    # 3. Add safety/validation to predictions
     for p in predictions:
         val = validation_agent.validate_drug(p["drug"])
         if val["status"] == "warning":
@@ -416,30 +405,19 @@ def process(disease: str = Query(..., description="Disease or symptoms to search
         if safety["status"] == "caution":
             p["breakdown"] += f"<br><span style='color:#facc15; font-weight:bold;'>🛡️ SAFETY: {safety['major_warning']}</span>"
 
-    # 6. Get Graph Visualization Data
+    # 4. Get Graph Visualization Data
     graph_data = graph_agent.get_graph_data()
-
-    # 7. Format entities in the format the frontend expects (keyed by paper ID)
-    entities_by_paper = {}
-    for pid, entities in entities_per_paper.items():
-        entities_by_paper[pid] = {
-            "drugs": entities.get("drugs", []),
-            "genes": entities.get("genes", []),
-            "diseases": entities.get("diseases", []),
-            "symptoms": entities.get("symptoms", []),
-            "evidence": entities.get("evidence", [])
-        }
 
     report = {
         "disease": predicted_disease,
         "is_prediction": is_prediction,
         "prediction_confidence": confidence,
-        "papers": papers,
-        "entities": entities_by_paper,  # Keyed by paper ID for frontend compatibility
+        "papers": [], # CSV flow doesn't use papers directly
+        "entities": {},
         "graph": graph_data,
         "predictions": predictions,
-        "evidence": list(dict.fromkeys(all_evidence)),  # Remove duplicates
-        "clinical_evidence": [e for e in all_evidence if any(kw in e.lower() for kw in ["mortality", "survival", "recovery"])],
+        "evidence": [],
+        "clinical_evidence": [],
     }
     return JSONResponse(report)
 

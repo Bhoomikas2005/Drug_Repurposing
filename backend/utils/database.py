@@ -22,14 +22,16 @@ class UserDatabase:
                 json.dump({"users": []}, f, indent=2)
 
     def _init_default_user(self):
-        """Initialize with a default admin user if no users exist."""
+        """Optionally initialize an admin account from explicit environment settings."""
         data = self._read_file()
-        if not data.get("users"):
+        username = os.getenv("ADMIN_USERNAME")
+        password = os.getenv("ADMIN_PASSWORD")
+        if not data.get("users") and username and password:
             default_user = {
                 "id": 1,
-                "username": "admin",
-                "email": "admin@drug-repurposing.com",
-                "password_hash": get_password_hash("Admin@123456"),
+                "username": username,
+                "email": os.getenv("ADMIN_EMAIL", "admin@drug-repurposing.com"),
+                "password_hash": get_password_hash(password),
                 "is_active": True,
                 "email_verified": True
             }

@@ -1,5 +1,5 @@
+import csv
 import networkx as nx
-import pandas as pd
 import os
 
 class GraphAgent:
@@ -11,21 +11,20 @@ class GraphAgent:
 
     def load_data(self):
         if os.path.exists(self.dg_path) and os.path.exists(self.gd_path):
-            df_dg = pd.read_csv(self.dg_path)
-            df_gd = pd.read_csv(self.gd_path)
-            
             # Build Knowledge Graph
-            for _, row in df_dg.iterrows():
-                u, v = row['drug'], row['gene']
-                self.G.add_node(u, type="drug")
-                self.G.add_node(v, type="gene")
-                self.G.add_edge(u, v, weight=1, interaction=row['interaction'])
-                
-            for _, row in df_gd.iterrows():
-                u, v = row['gene'], row['disease']
-                self.G.add_node(u, type="gene")
-                self.G.add_node(v, type="disease")
-                self.G.add_edge(u, v, weight=1, association=row['association'])
+            with open(self.dg_path, newline="", encoding="utf-8") as drug_gene_file:
+                for row in csv.DictReader(drug_gene_file):
+                    u, v = row['drug'], row['gene']
+                    self.G.add_node(u, type="drug")
+                    self.G.add_node(v, type="gene")
+                    self.G.add_edge(u, v, weight=1, interaction=row['interaction'])
+
+            with open(self.gd_path, newline="", encoding="utf-8") as gene_disease_file:
+                for row in csv.DictReader(gene_disease_file):
+                    u, v = row['gene'], row['disease']
+                    self.G.add_node(u, type="gene")
+                    self.G.add_node(v, type="disease")
+                    self.G.add_edge(u, v, weight=1, association=row['association'])
         else:
             print("CSV datasets not found in data/")
 
@@ -62,7 +61,22 @@ class GraphAgent:
         
         return suggestions
 
-    def get_graph_data(self):
-        nodes = [{"id": n, "label": n, "type": self.G.nodes[n].get("type", "entity")} for n in self.G.nodes]
-        edges = [{"from": u, "to": v, "weight": d.get("weight", 1)} for u, v, d in self.G.edges(data=True)]
+    def get_graph_data(self, disease_name=None, hops=2):
+        if not disease_name or disease_name not in self.G:
+            # Return a small sample or empty if no disease context
+            nodes = [{"id": n, "label": n, "type": self.G.nodes[n].get("type", "entity")} for n in list(self.G.nodes)[:50]]
+            edges = [{"from": u, "to": v, "weight": d.get("weight", 1)} for u, v, d in self.G.edges(data=True) if u in [node["id"] for node in nodes] and v in [node["id"] for node in nodes]]
+            return {"nodes": nodes, "edges": edges}
+
+        # Get subgraph of nodes within N hops
+        relevant_nodes = {disease_name}
+        for _ in range(hops):
+            neighbors = set()
+            for node in relevant_nodes:
+                neighbors.update(self.G.neighbors(node))
+            relevant_nodes.update(neighbors)
+
+        subG = self.G.subgraph(relevant_nodes)
+        nodes = [{"id": n, "label": n, "type": subG.nodes[n].get("type", "entity")} for n in subG.nodes]
+        edges = [{"from": u, "to": v, "weight": d.get("weight", 1)} for u, v, d in subG.edges(data=True)]
         return {"nodes": nodes, "edges": edges}

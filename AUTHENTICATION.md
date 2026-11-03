@@ -10,13 +10,11 @@ This project now includes proper JWT-based authentication with password hashing.
 - **User Management**: Create, authenticate, and manage users
 - **CORS Support**: Cross-origin requests are properly handled
 
-## Default Credentials
+## Create an Account
 
-For development, a default admin user is created:
-- **Username**: `admin`
-- **Password**: `admin123`
+There is no default administrator account. Use the Register form in the frontend to create an account. When SMTP is not configured, registration is automatically verified for this demo.
 
-**⚠️ Change these credentials in production!**
+To seed an administrator explicitly, set both `ADMIN_USERNAME` and `ADMIN_PASSWORD` in the backend environment before its first start. Keep these values private.
 
 ## API Endpoints
 

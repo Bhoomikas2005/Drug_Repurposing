@@ -4,13 +4,18 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from jose import jwt
+from backend.utils.security import SECRET_KEY
 
 # Email configuration - update these with your SMTP settings
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "your-email@gmail.com")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "your-app-password")
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
+APP_BASE_URL = (
+    os.getenv("APP_BASE_URL")
+    or os.getenv("RENDER_EXTERNAL_URL")
+    or "http://127.0.0.1:8000"
+).rstrip("/")
 
 # For development, we'll mock emails if credentials are not set
 ENABLE_EMAIL = SENDER_EMAIL != "your-email@gmail.com"
@@ -43,11 +48,11 @@ def send_verification_email(recipient_email: str, username: str, verification_to
         # In development mode without real email config
         print(f"\n[DEV MODE] Email verification token for {username} ({recipient_email}):")
         print(f"Token: {verification_token}")
-        print(f"Verification link: http://127.0.0.1:8000/api/verify-email?token={verification_token}\n")
+        print(f"Verification link: {APP_BASE_URL}/api/verify-email?token={verification_token}\n")
         return True
     
     try:
-        verification_link = f"http://127.0.0.1:8000/api/verify-email?token={verification_token}"
+        verification_link = f"{APP_BASE_URL}/api/verify-email?token={verification_token}"
         
         subject = "Verify your email for Drug Repurposing System"
         body = f"""
@@ -94,11 +99,11 @@ def send_password_reset_email(recipient_email: str, reset_token: str) -> bool:
     if not ENABLE_EMAIL:
         print(f"\n[DEV MODE] Password reset token for {recipient_email}:")
         print(f"Token: {reset_token}")
-        print(f"Reset link: http://127.0.0.1:8000/api/reset-password?token={reset_token}\n")
+        print(f"Reset link: {APP_BASE_URL}/api/reset-password?token={reset_token}\n")
         return True
     
     try:
-        reset_link = f"http://127.0.0.1:8000/api/reset-password?token={reset_token}"
+        reset_link = f"{APP_BASE_URL}/api/reset-password?token={reset_token}"
         
         subject = "Reset your password - Drug Repurposing System"
         body = f"""
