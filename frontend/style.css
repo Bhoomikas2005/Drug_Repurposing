@@ -67,6 +67,7 @@ h1 {
 
 .agent-label {
   position: absolute;
+  pointer-events: none;
   top: 1rem;
   right: 1rem;
   background: rgba(99, 102, 241, 0.15);

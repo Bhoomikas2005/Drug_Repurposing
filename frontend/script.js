@@ -433,9 +433,13 @@ async function runSearch() {
 
     // Fast-forward pipeline UI
     document.getElementById('step1').innerHTML = `<i class="fa-solid fa-check-circle" style="color:#10b981;"></i> Agent 1: Data Loaded`;
-    document.getElementById('step2').innerHTML = `<i class="fa-solid fa-check-circle" style="color:#10b981;"></i> Agent 2: ML Classifier Used`;
+    const modelStatus = data.ml_model_used
+      ? `${data.ml_model_name || 'ML'} scored candidates`
+      : 'Heuristic Scoring (ML unavailable)';
+    document.getElementById('step2').innerHTML = `<i class="fa-solid fa-check-circle" style="color:#10b981;"></i> Agent 2: ${modelStatus}`;
     document.getElementById('step3').innerHTML = `<i class="fa-solid fa-check-circle" style="color:#10b981;"></i> Agent 3: Graph Traversed`;
-    document.getElementById('step4').innerHTML = `<i class="fa-solid fa-check-circle" style="color:#10b981;"></i> Agent 4: Suggestions Found`;
+    const suggestionStatus = data.predictions.length ? 'Suggestions Found' : 'No Candidates Found';
+    document.getElementById('step4').innerHTML = `<i class="fa-solid fa-check-circle" style="color:#10b981;"></i> Agent 4: ${suggestionStatus}`;
 
     if (data.is_prediction) {
        document.getElementById('selected-disease-name').innerHTML = `${data.disease} <span class="badge" style="background:#10b981; font-size:0.7rem; vertical-align:middle; margin-left:0.5rem;">ML Predicted (${(data.prediction_confidence * 100).toFixed(1)}%)</span>`;
@@ -469,13 +473,18 @@ async function runSearch() {
     const d2s = document.getElementById('drug2-select');
     d1s.innerHTML = '<option>Select Drug 1</option>';
     d2s.innerHTML = '<option>Select Drug 2</option>';
-    allDrugs.forEach(d => {
+    const comparisonDrugs = new Set([
+      ...allDrugs,
+      ...(data.comparison_drugs || []),
+      ...data.predictions.map(prediction => prediction.drug)
+    ]);
+    comparisonDrugs.forEach(d => {
        const opt1 = document.createElement('option'); opt1.textContent = d; d1s.appendChild(opt1);
        const opt2 = document.createElement('option'); opt2.textContent = d; d2s.appendChild(opt2);
     });
 
     // Fetch similarities
-    fetchWithAuth(`/api/similar_diseases?disease=${encodeURIComponent(q)}`)
+    fetchWithAuth(`/api/similar_diseases?disease=${encodeURIComponent(finalQ)}`)
       .then(res => res.json())
       .then(simData => {
          const simDiv = document.getElementById('similar-diseases');
@@ -626,7 +635,6 @@ async function runSearch() {
       });
     }
 
-    document.getElementById('selected-disease-name').textContent = data.disease;
     document.getElementById('analysis-title').style.display = 'block';
     
     document.getElementById('results').style.display = 'block';
@@ -643,7 +651,7 @@ async function runSearch() {
         <div class="stat-value"><i class="fa-solid fa-pills"></i> ${allDrugs.size}</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Top Candidate</div>
+        <div class="stat-label">Top Candidate (demo score)</div>
         <div class="stat-value"><i class="fa-solid fa-trophy"></i> ${topDrug} (${topScore})</div>
       </div>
       <div class="stat-box">
@@ -684,11 +692,14 @@ window.onload = () => {
 
 document.getElementById('exportCsvBtn').onclick = () => {
   if (!currentData || !currentData.predictions) return;
-  let csv = "Candidate Drug,Confidence Score,Shared Genes/Targets,Evidence Sources\n";
+  let csv = "Candidate Drug,Demo Model Score,Shared Genes/Targets,Evidence Sources\n";
+  const escapeCsv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
   currentData.predictions.forEach(p => {
-    const evLinks = p.evidence_papers.join(';');
-    const targets = p.common_neighbors.join(';');
-    csv += `"${p.drug}","${(p.score * 100).toFixed(1)}%","${targets}","${evLinks}"\n`;
+    const evLinks = (p.evidence_papers || []).join(';');
+    const targets = (p.involved_nodes || []).filter(node =>
+      currentData.graph.nodes.some(graphNode => graphNode.id === node && graphNode.type === 'gene')
+    ).join(';');
+    csv += [p.drug, `${(p.score * 100).toFixed(1)}%`, targets, evLinks].map(escapeCsv).join(',') + '\n';
   });
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = window.URL.createObjectURL(blob);
@@ -699,7 +710,10 @@ document.getElementById('exportCsvBtn').onclick = () => {
 };
 
 document.getElementById('exportGraphBtn').onclick = () => {
-  const canvas = document.querySelector('#network canvas');
+  if (!currentData) return;
+  const graphContainer = document.getElementById('graph-3d');
+  const canvasSelector = graphContainer.style.display === 'none' ? '#network canvas' : '#graph-3d canvas';
+  const canvas = document.querySelector(canvasSelector);
   if (!canvas) return;
   const url = canvas.toDataURL('image/png');
   const a = document.createElement('a');
@@ -795,56 +809,11 @@ function generateBotReply(q) {
 window.toggleChat = toggleChat;
 
 // ML Chart Modal Logic
-let rocChartInstance = null;
 function openMlModal() {
   document.getElementById('mlModal').classList.add('active');
-  
-  const ctx = document.getElementById('rocChart').getContext('2d');
-  if (rocChartInstance) {
-    rocChartInstance.destroy();
-  }
-  
-  // Scikit-Learn evaluation synthetic replication for dashboard
-  rocChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-      datasets: [{
-        label: 'ROC Curve (AUC = 0.93)',
-        data: [0, 0.45, 0.65, 0.82, 0.90, 0.95, 0.98, 0.99, 1.0, 1.0, 1.0],
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.2)',
-        borderWidth: 3,
-        fill: true,
-        tension: 0.4
-      }, {
-        label: 'Random Guess',
-        data: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-        borderColor: '#64748b',
-        borderWidth: 2,
-        borderDash: [5, 5],
-        fill: false
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { labels: { color: '#e2e8f0' } }
-      },
-      scales: {
-        x: { 
-          title: { display: true, text: 'False Positive Rate', color: '#cbd5e1' },
-          ticks: { color: '#94a3b8' },
-          grid: { color: 'rgba(51, 65, 85, 0.4)' }
-        },
-        y: { 
-          title: { display: true, text: 'True Positive Rate', color: '#cbd5e1' },
-          ticks: { color: '#94a3b8' },
-          grid: { color: 'rgba(51, 65, 85, 0.4)' }
-        }
-      }
-    }
-  });
+  const diagnostics = currentData?.ml_model_used ? currentData : null;
+  document.getElementById('ml-model-name').textContent = diagnostics?.ml_model_name || 'Unavailable';
+  document.getElementById('ml-training-examples').textContent = diagnostics?.ml_training_examples ?? 0;
 }
 window.openMlModal = openMlModal;
 

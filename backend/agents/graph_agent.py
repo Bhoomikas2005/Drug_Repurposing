@@ -28,6 +28,50 @@ class GraphAgent:
         else:
             print("CSV datasets not found in data/")
 
+    def build_evidence_graph(self, papers):
+        graph = self.G.copy()
+        node_index = {
+            (data.get("type", "entity"), str(node).casefold()): node
+            for node, data in graph.nodes(data=True)
+        }
+
+        def resolve_node(label, node_type):
+            label = str(label).strip()
+            if not label:
+                return None
+            key = (node_type, label.casefold())
+            if key not in node_index:
+                node_index[key] = label
+                graph.add_node(label, type=node_type)
+            return node_index[key]
+
+        def add_evidence_edge(left, right, paper_id, attribute):
+            if not left or not right:
+                return
+            edge = graph.get_edge_data(left, right, default={}).copy()
+            paper_ids = set(edge.get("papers", []))
+            if paper_id:
+                paper_ids.add(paper_id)
+            edge["papers"] = sorted(paper_ids)
+            edge["weight"] = max(edge.get("weight", 1), len(paper_ids), 1)
+            edge[attribute] = "reported in paper"
+            graph.add_edge(left, right, **edge)
+
+        for paper in papers:
+            paper_id = paper.get("id")
+            drugs = [resolve_node(name, "drug") for name in paper.get("drugs", [])]
+            genes = [resolve_node(name, "gene") for name in paper.get("genes", [])]
+            diseases = [resolve_node(name, "disease") for name in paper.get("diseases", [])]
+
+            for drug in drugs:
+                for gene in genes:
+                    add_evidence_edge(drug, gene, paper_id, "interaction")
+            for gene in genes:
+                for disease in diseases:
+                    add_evidence_edge(gene, disease, paper_id, "association")
+
+        return graph
+
     def suggest_drugs(self, disease_name):
         suggestions = []
         if disease_name not in self.G:
@@ -61,11 +105,13 @@ class GraphAgent:
         
         return suggestions
 
-    def get_graph_data(self, disease_name=None, hops=2):
-        if not disease_name or disease_name not in self.G:
+    def get_graph_data(self, disease_name=None, hops=2, graph=None):
+        graph = graph or self.G
+        if not disease_name or disease_name not in graph:
             # Return a small sample or empty if no disease context
-            nodes = [{"id": n, "label": n, "type": self.G.nodes[n].get("type", "entity")} for n in list(self.G.nodes)[:50]]
-            edges = [{"from": u, "to": v, "weight": d.get("weight", 1)} for u, v, d in self.G.edges(data=True) if u in [node["id"] for node in nodes] and v in [node["id"] for node in nodes]]
+            nodes = [{"id": n, "label": n, "type": graph.nodes[n].get("type", "entity")} for n in list(graph.nodes)[:50]]
+            node_ids = {node["id"] for node in nodes}
+            edges = [{"from": u, "to": v, "weight": d.get("weight", 1)} for u, v, d in graph.edges(data=True) if u in node_ids and v in node_ids]
             return {"nodes": nodes, "edges": edges}
 
         # Get subgraph of nodes within N hops
@@ -73,10 +119,10 @@ class GraphAgent:
         for _ in range(hops):
             neighbors = set()
             for node in relevant_nodes:
-                neighbors.update(self.G.neighbors(node))
+                neighbors.update(graph.neighbors(node))
             relevant_nodes.update(neighbors)
 
-        subG = self.G.subgraph(relevant_nodes)
+        subG = graph.subgraph(relevant_nodes)
         nodes = [{"id": n, "label": n, "type": subG.nodes[n].get("type", "entity")} for n in subG.nodes]
         edges = [{"from": u, "to": v, "weight": d.get("weight", 1)} for u, v, d in subG.edges(data=True)]
         return {"nodes": nodes, "edges": edges}

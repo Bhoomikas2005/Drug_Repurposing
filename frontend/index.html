@@ -4,10 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Multi-Agent Drug Repurposing</title>
-    <link rel="stylesheet" href="/static/style.css?v=4">
+    <link rel="stylesheet" href="/static/style.css?v=5">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/3d-force-graph"></script>
   </head>
   <body>
@@ -137,7 +136,7 @@
                 <thead>
                   <tr>
                     <th>Suggested Drug</th>
-                    <th>Confidence</th>
+                    <th>Demo Model Score</th>
                     <th>Clinical Trial</th>
                     <th>Explanation ("Why this drug?")</th>
                     <th>Path Used</th>
@@ -214,33 +213,17 @@
 
     <!-- ML Diagnostics Modal -->
     <div id="mlModal" class="modal-overlay">
-      <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-content" style="max-width: 640px;">
         <div class="modal-header">
-          <h3 style="color:#10b981;"><i class="fa-solid fa-chart-pie"></i> Random Forest ML Diagnostics</h3>
+          <h3 style="color:#10b981;"><i class="fa-solid fa-chart-pie"></i> Drug Ranking Model</h3>
           <button onclick="document.getElementById('mlModal').classList.remove('active')" class="modal-close">&times;</button>
         </div>
-        <div class="modal-body" style="display:flex; gap:2rem; align-items:flex-start;">
-          <div style="flex:1;">
-            <canvas id="rocChart" width="400" height="300"></canvas>
-          </div>
-          <div style="flex:1;">
-            <h4 style="color:#e2e8f0; margin-bottom:1rem;">Evaluation Metrics</h4>
-            <ul style="color:#cbd5e1; font-size:0.95rem; line-height:2; list-style:none; padding:0;">
-              <li><b>Accuracy:</b> <span style="float:right; color:#10b981;">98.2%</span></li>
-              <li><b>Precision:</b> <span style="float:right; color:#10b981;">96.5%</span></li>
-              <li><b>Recall:</b> <span style="float:right; color:#10b981;">97.2%</span></li>
-              <li><b>F1 Score:</b> <span style="float:right; color:#10b981;">96.8%</span></li>
-              <li><b>ROC-AUC:</b> <span style="float:right; color:#10b981;">0.99</span></li>
-            </ul>
-            <div style="margin-top:1.5rem; background:rgba(15,23,42,0.5); padding:1rem; border-radius:8px; border:1px solid #334155;">
-               <h4 style="margin-bottom:0.8rem; color:#94a3b8;">Confusion Matrix</h4>
-               <table style="width:100%; border-collapse:collapse; text-align:center; font-size:0.85rem; color:#cbd5e1;">
-                  <tr><th></th><th>Pred True</th><th>Pred False</th></tr>
-                  <tr><th>Actual True</th><td style="background:#10b981; color:#fff; font-weight:bold;">124 (TP)</td><td style="background:#ef4444; color:#fff;">12 (FN)</td></tr>
-                  <tr><th>Actual False</th><td style="background:#ef4444; color:#fff;">16 (FP)</td><td style="background:#10b981; color:#fff; font-weight:bold;">848 (TN)</td></tr>
-               </table>
-            </div>
-          </div>
+        <div class="modal-body" style="display:block; color:#cbd5e1; line-height:1.7;">
+          <p>Drug rankings use an illustrative Random Forest model. Scores are not validated clinical probabilities.</p>
+          <p><b>Model:</b> <span id="ml-model-name">Not run</span></p>
+          <p><b>Illustrative training rows:</b> <span id="ml-training-examples">0</span></p>
+          <p><b>Training data:</b> Simulated examples, not clinical outcomes.</p>
+          <p>Use these results for demonstration only. Clinical decisions require independently validated evidence.</p>
         </div>
       </div>
     </div>
@@ -279,6 +262,6 @@
       </div>
     </div>
 
-    <script src="/static/script.js?v=5"></script>
+    <script src="/static/script.js?v=8"></script>
   </body>
 </html>

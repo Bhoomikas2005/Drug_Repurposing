@@ -10,6 +10,7 @@ class PredictionAgent:
     def __init__(self):
         # Implement a Random Forest Classifier to satisfy ML component requirements
         self.model_ready = False
+        self.training_examples = 0
         try:
             self.model = RandomForestClassifier(n_estimators=100, random_state=42)
             
@@ -26,6 +27,7 @@ class PredictionAgent:
                 [2, 7, 2, 0],  # Good genes but no papers -> Fail
                 [1, 1, 1, 5]   # Single target but high clinical evidence -> Success
             ])
+            self.training_examples = len(X_train)
             y_train = np.array([1, 0, 0, 1, 1, 0, 0, 1])
             self.model.fit(X_train, y_train)
             self.model_ready = True
@@ -36,11 +38,19 @@ class PredictionAgent:
         preds = []
         
         # 1. Resolve Target Node
-        target_node = None
-        for n in G.nodes():
-            if G.nodes[n].get("type") == "disease" and disease.lower() in str(n).lower():
-                target_node = n
-                break
+        disease_nodes = [
+            node for node, data in G.nodes(data=True)
+            if data.get("type") == "disease"
+        ]
+        target_node = next(
+            (node for node in disease_nodes if str(node).casefold() == disease.casefold()),
+            None,
+        )
+        if target_node is None:
+            target_node = next(
+                (node for node in disease_nodes if disease.casefold() in str(node).casefold()),
+                None,
+            )
                 
         if not target_node:
             return preds

@@ -7,6 +7,7 @@ from typing import List, Optional
 from datetime import timedelta
 from backend.agents.retrieval_agent import RetrievalAgent
 from backend.agents.extraction_agent import ExtractionAgent
+from backend.agents.prediction_agent import PredictionAgent
 from backend.agents.prediction_model_agent import PredictionModelAgent
 from backend.agents.graph_agent import GraphAgent
 from backend.agents.validation_agent import ValidationAgent
@@ -84,6 +85,7 @@ def login_page():
 
 retriever = RetrievalAgent("data/sample_papers.json")
 extraction_agent = ExtractionAgent()
+prediction_agent = PredictionAgent()
 graph_agent = GraphAgent(drug_gene_path="data/drug_gene.csv", gene_disease_path="data/gene_disease.csv")
 prediction_model_agent = PredictionModelAgent()
 validation_agent = ValidationAgent()
@@ -176,6 +178,42 @@ SIDE_EFFECTS = {
     "Memantine": "Dizziness, headache, confusion",
     "Liraglutide": "Nausea, vomiting, hypoglycemia",
 }
+
+
+def _analyze_disease(disease: str, papers: list[dict]) -> dict:
+    entities = extraction_agent.extract_entities_from_papers(papers)
+    analysis_graph = graph_agent.build_evidence_graph(papers)
+    predictions = prediction_agent.predict_for_disease(analysis_graph, disease, entities)
+    predictions = [prediction for prediction in predictions if prediction.get("evidence_papers")]
+
+    for prediction in predictions:
+        validation = validation_agent.validate_drug(prediction["drug"])
+        prediction["clinical_trial"] = validation.get("clinical_trial", False)
+        if validation.get("status") == "warning":
+            prediction["breakdown"] += f"<br>Warning: {validation.get('message', '')}"
+
+        safety = safety_agent.evaluate_safety(prediction["drug"])
+        if safety.get("status") == "caution":
+            prediction["breakdown"] += f"<br>Safety: {safety.get('major_warning', '')}"
+
+    clinical_evidence = [
+        {"paper_id": paper_id, "snippet": snippet}
+        for paper_id, extracted in entities.items()
+        for snippet in extracted.get("evidence", [])
+    ]
+    return {
+        "entities": entities,
+        "graph": graph_agent.get_graph_data(disease, graph=analysis_graph),
+        "comparison_drugs": sorted(
+            node for node, data in analysis_graph.nodes(data=True)
+            if data.get("type") == "drug"
+        ),
+        "predictions": predictions,
+        "clinical_evidence": clinical_evidence,
+        "ml_model_used": prediction_agent.model_ready,
+        "ml_model_name": type(prediction_agent.model).__name__ if prediction_agent.model_ready else "Heuristic fallback",
+        "ml_training_examples": prediction_agent.training_examples,
+    }
 
 
 @app.post("/api/token", response_model=Token)
@@ -381,43 +419,39 @@ def get_diseases(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/process")
 def process(disease: str = Query(..., description="Disease or symptoms to search"), real_data: bool = Query(False, description="Use real PubMed API"), current_user: dict = Depends(get_current_user)):
-    # 1. Flow Check: If input contains multiple symptoms (commas or and), use ML model
     q = disease.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Enter a disease or symptom to analyze.")
+
     predicted_disease = q
     confidence = 1.0
     is_prediction = False
 
     if "," in q or " and " in q.lower() or len(q.split()) > 3:
         predicted_disease, confidence = prediction_model_agent.predict_disease(q)
+        if predicted_disease == "Unknown":
+            raise HTTPException(status_code=422, detail="The symptom classifier could not identify a disease.")
         is_prediction = True
-    
-    # 2. Get drugs from Knowledge Graph (drug -> gene -> disease)
-    predictions = graph_agent.suggest_drugs(predicted_disease)
-    
-    # 3. Add safety/validation to predictions
-    for p in predictions:
-        val = validation_agent.validate_drug(p["drug"])
-        if val["status"] == "warning":
-            p["breakdown"] += f"<br><span style='color:#ef4444;'>⚠️ Warning: {val['message']}</span>"
-        p["clinical_trial"] = val.get("clinical_trial", False)
-        
-        safety = safety_agent.evaluate_safety(p["drug"])
-        if safety["status"] == "caution":
-            p["breakdown"] += f"<br><span style='color:#facc15; font-weight:bold;'>🛡️ SAFETY: {safety['major_warning']}</span>"
 
-    # 4. Get Graph Visualization Data
-    graph_data = graph_agent.get_graph_data()
+    matched_disease = next(
+        (name for name in _DATASET_DISEASES if name.casefold() == predicted_disease.casefold()),
+        None,
+    )
+    if matched_disease:
+        predicted_disease = matched_disease
+
+    papers = retriever.search_papers(predicted_disease, use_real=real_data)
+    if not papers:
+        raise HTTPException(status_code=404, detail=f"No research papers found for {predicted_disease}.")
+
+    analysis = _analyze_disease(predicted_disease, papers)
 
     report = {
         "disease": predicted_disease,
         "is_prediction": is_prediction,
         "prediction_confidence": confidence,
-        "papers": [], # CSV flow doesn't use papers directly
-        "entities": {},
-        "graph": graph_data,
-        "predictions": predictions,
-        "evidence": [],
-        "clinical_evidence": [],
+        "papers": papers,
+        **analysis,
     }
     return JSONResponse(report)
 
@@ -460,9 +494,10 @@ def compare_drugs(drug1: str, drug2: str, current_user: dict = Depends(get_curre
     info1 = get_info(drug1)
     info2 = get_info(drug2)
     
+    side_effects = {name.casefold(): effects for name, effects in SIDE_EFFECTS.items()}
     return JSONResponse({
-        "drug1": {"name": drug1, "side_effects": SIDE_EFFECTS.get(drug1, "Nausea, fatigue"), **info1},
-        "drug2": {"name": drug2, "side_effects": SIDE_EFFECTS.get(drug2, "Nausea, fatigue"), **info2}
+        "drug1": {"name": drug1, "side_effects": side_effects.get(drug1.casefold(), "Nausea, fatigue"), **info1},
+        "drug2": {"name": drug2, "side_effects": side_effects.get(drug2.casefold(), "Nausea, fatigue"), **info2}
     })
 
 @app.get("/api/symptom_discovery")
@@ -473,8 +508,14 @@ def symptom_discovery(symptoms: str = Query(..., description="Comma separated sy
     if predicted_disease == "Unknown":
         return JSONResponse([])
 
-    # 2. Get drug suggestions for the predicted disease from the Knowledge Graph
-    suggestions = graph_agent.suggest_drugs(predicted_disease)
+    if predicted_disease == "Unknown":
+        return JSONResponse([])
+
+    papers = retriever.search_papers(predicted_disease)
+    if not papers:
+        return JSONResponse([])
+    analysis = _analyze_disease(predicted_disease, papers)
+    suggestions = analysis["predictions"]
     
     # 3. Format as discovery results
     # We'll return the predicted disease as the top match
@@ -482,7 +523,9 @@ def symptom_discovery(symptoms: str = Query(..., description="Comma separated sy
         "disease": predicted_disease,
         "match_score": f"{int(confidence * 100)}%",
         "matched_symptoms": [symptoms],
-        "suggested_drugs": [p["drug"] for p in suggestions[:3]]
+        "suggested_drugs": [p["drug"] for p in suggestions[:3]],
+        "papers": papers,
+        "graph": analysis["graph"],
     }]
         
     return JSONResponse(results)

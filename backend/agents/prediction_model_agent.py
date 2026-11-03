@@ -18,7 +18,7 @@ class PredictionModelAgent:
 
     def predict_disease(self, symptoms_text):
         if not self.model or not self.vectorizer:
-            return "Unknown"
+            return "Unknown", 0.0
         
         # Transform input
         vec = self.vectorizer.transform([symptoms_text])
