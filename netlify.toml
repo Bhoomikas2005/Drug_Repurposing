@@ -9,6 +9,6 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "https://drug-repurposing-api.onrender.com/api/:splat"
+  to = "https://drug-repurposing-fastapi-bhoomikas.onrender.com/api/:splat"
   status = 200
   force = true

@@ -42,9 +42,9 @@ uvicorn backend.app:app --reload
 
 Netlify only serves the static frontend; it does not run this FastAPI backend. Deploy the backend to Render and the frontend to Netlify:
 
-1. In Render, create a Blueprint from this repository. `render.yaml` creates the `drug-repurposing-api` web service, installs the Python dependencies, generates a JWT secret, and configures `/health` as its health check.
-2. In Netlify, import this repository. `netlify.toml` publishes `frontend/` and proxies `/api/*` requests to `https://drug-repurposing-api.onrender.com`.
-3. If Render assigns a different service URL, update the API proxy target in `netlify.toml` and redeploy Netlify.
+1. In Render, create a Blueprint from this repository. `render.yaml` creates the `drug-repurposing-fastapi-bhoomikas` web service, installs the Python dependencies, generates a JWT secret, and configures `/health` as its health check.
+2. In Netlify, import this repository. `netlify.toml` publishes `frontend/` and proxies `/api/*` requests to `https://drug-repurposing-fastapi-bhoomikas.onrender.com`.
+3. Confirm `https://drug-repurposing-fastapi-bhoomikas.onrender.com/openapi.json` lists `/api/token` and `/api/process`. If Render assigns a different URL, update the API proxy target in `netlify.toml` and redeploy Netlify.
 4. Open the Netlify site and use Register to create an account. No default administrator password is configured. Without SMTP settings, new accounts are automatically verified for this demo.
 
 The Render free service may take a short time to wake up after inactivity. The JSON user store is intended for demonstration; use a persistent database before relying on account data in production.
